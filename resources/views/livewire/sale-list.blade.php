@@ -16,6 +16,15 @@
                             <input type="text" class="form-control" placeholder="Search by sale number, product or customer..." wire:model.live="search">
                         </div>
                     </div>
+                    <div class="col-md-6">
+                        <select class="form-select" wire:model.live="filter">
+                            <option value="all">All Deliveries</option>
+                            <option value="overdue">Overdue Deliveries</option>
+                            <option value="upcoming">Upcoming Deliveries</option>
+                            <option value="weekly">This Week's Deliveries</option>
+                            <option value="monthly">This Month's Deliveries</option>
+                        </select>
+                    </div>
                 </div>
 
                 @if($showForm)
@@ -42,6 +51,12 @@
                                     <label class="form-label">Sale Date</label>
                                     <input type="date" class="form-control" wire:model="sale_date">
                                     @error('sale_date') <span class="text-danger">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Delivery Date</label>
+                                    <input type="date" class="form-control" wire:model="delivery_date">
+                                    @error('delivery_date') <span class="text-danger">{{ $message }}</span> @enderror
                                 </div>
 
                                 <div class="col-md-6 mb-3">
@@ -86,7 +101,9 @@
                                 <div class="col-md-3 mb-3">
                                     <label class="form-label">Delivery Status</label>
                                     <select class="form-select" wire:model="delivery_status">
-                                        <option value="pending">Pending</option>
+                                        <option value="not_started">Not Started</option>
+                                        <option value="in_progress">In Progress</option>
+                                        <option value="completed">Completed</option>
                                         <option value="delivered">Delivered</option>
                                     </select>
                                     @error('delivery_status') <span class="text-danger">{{ $message }}</span> @enderror
@@ -118,7 +135,8 @@
                             <tr>
                                 <th>Sale #</th>
                                 <th>Customer</th>
-                                <th>Date</th>
+                                <th>Sale Date</th>
+                                <th>Delivery Date</th>
                                 <th>Product</th>
                                 <th>Quantity</th>
                                 <th>Price</th>
@@ -130,10 +148,18 @@
                         </thead>
                         <tbody>
                             @forelse($sales as $sale)
-                            <tr>
+                            <tr @class(['table-danger' => $sale->isDeliveryOverdue()])>
                                 <td>{{ $sale->sale_number }}</td>
                                 <td>{{ $sale->customer->customer_name }}</td>
                                 <td>{{ $sale->sale_date->format('Y-m-d') }}</td>
+                                <td>
+                                    {{ $sale->delivery_date ? $sale->delivery_date->format('Y-m-d') : 'N/A' }}
+                                    @if($sale->getDaysUntilDelivery() !== null)
+                                        <small class="d-block text-muted">
+                                            {{ $sale->getDaysUntilDelivery() > 0 ? $sale->getDaysUntilDelivery() . ' days left' : abs($sale->getDaysUntilDelivery()) . ' days overdue' }}
+                                        </small>
+                                    @endif
+                                </td>
                                 <td>{{ $sale->product_name }}</td>
                                 <td>{{ $sale->quantity }}</td>
                                 <td>{{ number_format($sale->price, 2) }}</td>
@@ -144,9 +170,17 @@
                                     </span>
                                 </td>
                                 <td>
-                                    <span class="badge bg-{{ $sale->delivery_status === 'delivered' ? 'success' : 'warning' }}">
-                                        {{ ucfirst($sale->delivery_status) }}
-                                    </span>
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-{{ $sale->getDeliveryStatusBadgeClass() }} dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                            {{ ucfirst(str_replace('_', ' ', $sale->delivery_status)) }}
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li><a class="dropdown-item" href="#" wire:click.prevent="updateDeliveryStatus({{ $sale->id }}, 'not_started')">Not Started</a></li>
+                                            <li><a class="dropdown-item" href="#" wire:click.prevent="updateDeliveryStatus({{ $sale->id }}, 'in_progress')">In Progress</a></li>
+                                            <li><a class="dropdown-item" href="#" wire:click.prevent="updateDeliveryStatus({{ $sale->id }}, 'completed')">Completed</a></li>
+                                            <li><a class="dropdown-item" href="#" wire:click.prevent="updateDeliveryStatus({{ $sale->id }}, 'delivered')">Delivered</a></li>
+                                        </ul>
+                                    </div>
                                 </td>
                                 <td>
                                     <button class="btn btn-sm btn-icon btn-primary" wire:click="editSale({{ $sale->id }})">
@@ -156,7 +190,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="10" class="text-center">No sales found</td>
+                                <td colspan="11" class="text-center">No sales found</td>
                             </tr>
                             @endforelse
                         </tbody>

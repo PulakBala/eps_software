@@ -15,28 +15,36 @@ class SaleList extends Component
     public $editingSale = null;
     public $customer_id;
     public $sale_date;
+    public $delivery_date;
     public $product_name;
     public $quantity;
     public $price;
     public $total_amount;
     public $payment_status = 'due';
     public $paid_amount = 0;
-    public $delivery_status = 'pending';
+    public $delivery_status = 'not_started';
     public $notes;
+    public $filter = 'all'; // all, overdue, upcoming, weekly, monthly
 
     protected $rules = [
         'customer_id' => 'required|exists:invoices,id',
         'sale_date' => 'required|date',
+        'delivery_date' => 'required|date|after_or_equal:sale_date',
         'product_name' => 'required|string|min:3',
         'quantity' => 'required|integer|min:1',
         'price' => 'required|numeric|min:0',
         'payment_status' => 'required|in:paid,due,partial',
         'paid_amount' => 'required|numeric|min:0',
-        'delivery_status' => 'required|in:pending,delivered',
+        'delivery_status' => 'required|in:not_started,in_progress,completed,delivered',
         'notes' => 'nullable|string'
     ];
 
     public function updatedSearch()
+    {
+        $this->resetPage();
+    }
+
+    public function updatedFilter()
     {
         $this->resetPage();
     }
@@ -73,6 +81,7 @@ class SaleList extends Component
             'sale_number' => $this->generateSaleNumber(),
             'customer_id' => $this->customer_id,
             'sale_date' => $this->sale_date,
+            'delivery_date' => $this->delivery_date,
             'product_name' => $this->product_name,
             'quantity' => $this->quantity,
             'price' => $this->price,
@@ -93,6 +102,7 @@ class SaleList extends Component
         $this->editingSale = Sale::findOrFail($id);
         $this->customer_id = $this->editingSale->customer_id;
         $this->sale_date = $this->editingSale->sale_date->format('Y-m-d');
+        $this->delivery_date = $this->editingSale->delivery_date->format('Y-m-d');
         $this->product_name = $this->editingSale->product_name;
         $this->quantity = $this->editingSale->quantity;
         $this->price = $this->editingSale->price;
@@ -111,6 +121,7 @@ class SaleList extends Component
         $this->editingSale->update([
             'customer_id' => $this->customer_id,
             'sale_date' => $this->sale_date,
+            'delivery_date' => $this->delivery_date,
             'product_name' => $this->product_name,
             'quantity' => $this->quantity,
             'price' => $this->price,
@@ -126,9 +137,16 @@ class SaleList extends Component
         session()->flash('message', 'Sale updated successfully!');
     }
 
+    public function updateDeliveryStatus($id, $status)
+    {
+        $sale = Sale::findOrFail($id);
+        $sale->update(['delivery_status' => $status]);
+        session()->flash('message', 'Delivery status updated successfully!');
+    }
+
     public function render()
     {
-        $sales = Sale::query()
+        $query = Sale::query()
             ->with('customer')
             ->when($this->search, function($query) {
                 $query->where(function($q) {
@@ -139,8 +157,17 @@ class SaleList extends Component
                       });
                 });
             })
-            ->latest()
-            ->paginate(10);
+            ->when($this->filter, function($query) {
+                return match($this->filter) {
+                    'overdue' => $query->overdue(),
+                    'upcoming' => $query->upcoming(),
+                    'weekly' => $query->weekly(),
+                    'monthly' => $query->monthly(),
+                    default => $query
+                };
+            });
+
+        $sales = $query->latest()->paginate(10);
 
         return view('livewire.sale-list', [
             'sales' => $sales

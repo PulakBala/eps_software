@@ -13,6 +13,7 @@ return new class extends Migration
             $table->string('sale_number')->unique();
             $table->foreignId('customer_id')->constrained('invoices')->onDelete('cascade');
             $table->date('sale_date');
+            $table->date('delivery_date');
             $table->string('product_name');
             $table->integer('quantity');
             $table->decimal('price', 10, 2);
