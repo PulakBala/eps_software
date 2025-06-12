@@ -21,6 +21,7 @@ Route::middleware(['auth'])->group(function () {
   Route::get('/customers', App\Livewire\CustomerList::class)->name('customers');
   Route::get('/sales', App\Livewire\SaleList::class)->name('sales');
   Route::get('/inventory', App\Livewire\InventoryList::class)->name('inventory');
+  Route::get('/attendance', App\Livewire\AttendanceList::class)->name('attendance');
 });
 
 require __DIR__ . '/auth.php';

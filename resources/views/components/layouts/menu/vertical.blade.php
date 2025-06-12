@@ -48,6 +48,13 @@
       </a>
     </li>
 
+    <li class="menu-item {{ request()->is('attendance') ? 'active' : '' }}">
+      <a class="menu-link" href="{{ route('attendance') }}" wire:navigate>
+        <i class="menu-icon tf-icons bx bx-calendar-check"></i>
+        <div>Attendance</div>
+      </a>
+    </li>
+
     <!-- Settings -->
     <li class="menu-item {{ request()->is('settings/*') ? 'active open' : '' }}">
       <a href="javascript:void(0);" class="menu-link menu-toggle">
