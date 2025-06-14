@@ -4,6 +4,9 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Attendance Management</h5>
                 <div class="d-flex gap-2">
+                    <button class="btn btn-info" wire:click="checkDeviceConnection">
+                        <i class="bx bx-wifi me-1"></i> Check Device Connection
+                    </button>
                     <button class="btn btn-primary" wire:click="syncAttendance">
                         <i class="bx bx-sync me-1"></i> Sync from Device
                     </button>

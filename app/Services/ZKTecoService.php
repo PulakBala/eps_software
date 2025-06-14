@@ -7,37 +7,135 @@ use App\Models\User;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use CodingLibs\ZktecoPhp\Libs\ZKTeco;
 
 class ZKTecoService
 {
+    protected $zk;
     protected $ip;
     protected $port;
-    protected $timeout;
-    protected $socket;
+    protected $isConnected = false;
 
-    public function __construct($ip = '192.168.1.201', $port = 4370, $timeout = 5)
+    public function __construct($ip = '192.168.0.102', $port = 4370)
     {
+        if (!function_exists('socket_create')) {
+            throw new Exception('PHP Sockets extension is not properly installed. Please check your PHP configuration.');
+        }
+
+        // Set maximum execution time to 120 seconds
+        set_time_limit(120);
+
         $this->ip = $ip;
         $this->port = $port;
-        $this->timeout = $timeout;
+        $this->zk = new ZKTeco($ip, $port);
+    }
+
+    public function isDeviceReachable()
+    {
+        try {
+            $socket = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
+            if ($socket === false) {
+                throw new Exception('Could not create socket');
+            }
+
+            socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => 5, 'usec' => 0]);
+            
+            $result = @socket_connect($socket, $this->ip, $this->port);
+            socket_close($socket);
+            
+            return $result !== false;
+        } catch (Exception $e) {
+            Log::error('Device reachability check failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    public function testProtocol()
+    {
+        try {
+            if (!$this->isDeviceReachable()) {
+                return false;
+            }
+
+            $this->connect();
+            $version = $this->zk->version();
+            return !empty($version);
+        } catch (Exception $e) {
+            Log::error('Protocol test failed: ' . $e->getMessage());
+            return false;
+        } finally {
+            $this->disconnect();
+        }
+    }
+
+    public function getDeviceInfo()
+    {
+        try {
+            if (!$this->isDeviceReachable()) {
+                return null;
+            }
+
+            $this->connect();
+            return [
+                'version' => $this->zk->version(),
+                'platform' => $this->zk->platform(),
+                'firmware' => $this->zk->fmVersion(),
+                'serial' => $this->zk->serialNumber()
+            ];
+        } catch (Exception $e) {
+            Log::error('Failed to get device info: ' . $e->getMessage());
+            return null;
+        } finally {
+            $this->disconnect();
+        }
+    }
+
+    public function getDeviceTime()
+    {
+        try {
+            if (!$this->isDeviceReachable()) {
+                return null;
+            }
+
+            $this->connect();
+            return $this->zk->getTime();
+        } catch (Exception $e) {
+            Log::error('Failed to get device time: ' . $e->getMessage());
+            return null;
+        } finally {
+            $this->disconnect();
+        }
     }
 
     public function connect()
     {
         try {
-            $this->socket = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->timeout, 'usec' => 0]);
-            return true;
+            if ($this->isConnected) {
+                return true;
+            }
+
+            if (!$this->isDeviceReachable()) {
+                throw new Exception('Device is not reachable at ' . $this->ip . ':' . $this->port);
+            }
+
+            $result = $this->zk->connect();
+            if ($result) {
+                $this->isConnected = true;
+                return true;
+            }
+
+            throw new Exception('Failed to establish connection with device');
         } catch (Exception $e) {
             Log::error('ZKTeco connection error: ' . $e->getMessage());
-            return false;
+            throw new Exception('Could not connect to the attendance device. Please check if the device is powered on and connected to the network. Error: ' . $e->getMessage());
         }
     }
 
     public function disconnect()
     {
-        if ($this->socket) {
-            socket_close($this->socket);
+        if ($this->zk && $this->isConnected) {
+            $this->zk->disconnect();
+            $this->isConnected = false;
         }
     }
 
@@ -48,55 +146,38 @@ class ZKTecoService
                 throw new Exception('Could not connect to device');
             }
 
-            // Send command to get attendance data
-            $command = $this->createCommand('CMD_ATTLOG_RRQ');
-            socket_sendto($this->socket, $command, strlen($command), 0, $this->ip, $this->port);
+            // Get attendance data using package's method
+            $attendanceData = $this->zk->getAttendanceData();
+            
+            if (empty($attendanceData)) {
+                throw new Exception('No attendance data found on device');
+            }
 
-            // Receive response
-            $response = '';
-            socket_recvfrom($this->socket, $response, 1024, 0, $this->ip, $this->port);
+            // Format the data according to our needs
+            $formattedData = [];
+            foreach ($attendanceData as $data) {
+                if (!isset($data['user_id']) || !isset($data['timestamp'])) {
+                    continue; // Skip invalid records
+                }
 
-            // Parse response and return attendance data
-            return $this->parseAttendanceData($response);
+                $formattedData[] = [
+                    'user_id' => $data['user_id'],
+                    'timestamp' => $data['timestamp'],
+                    'status' => $data['status'] ?? 'check'
+                ];
+            }
+
+            if (empty($formattedData)) {
+                throw new Exception('No valid attendance records found');
+            }
+
+            return $formattedData;
         } catch (Exception $e) {
             Log::error('Error getting attendance: ' . $e->getMessage());
-            return [];
+            throw new Exception('Failed to get attendance data: ' . $e->getMessage());
         } finally {
             $this->disconnect();
         }
-    }
-
-    protected function createCommand($command)
-    {
-        // Create command packet according to ZKTeco protocol
-        // This is a simplified version - you'll need to implement the actual protocol
-        return pack('H*', '0000000000000000000000000000000000000000');
-    }
-
-    protected function parseAttendanceData($data)
-    {
-        // Parse the raw data from device
-        // This is a simplified version - you'll need to implement the actual parsing
-        $attendances = [];
-
-        // Example parsing (you need to implement the actual protocol)
-        $lines = explode("\n", $data);
-        foreach ($lines as $line) {
-            if (empty($line)) continue;
-
-            // Parse each line according to ZKTeco protocol
-            // This is just an example - you need to implement the actual parsing
-            $parts = explode("\t", $line);
-            if (count($parts) >= 3) {
-                $attendances[] = [
-                    'user_id' => $parts[0],
-                    'timestamp' => $parts[1],
-                    'status' => $parts[2]
-                ];
-            }
-        }
-
-        return $attendances;
     }
 
     public function syncAttendance()
@@ -133,7 +214,7 @@ class ZKTecoService
             return true;
         } catch (Exception $e) {
             Log::error('Error syncing attendance: ' . $e->getMessage());
-            return false;
+            throw new Exception('Failed to sync attendance: ' . $e->getMessage());
         }
     }
 } 

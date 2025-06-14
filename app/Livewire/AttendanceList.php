@@ -6,6 +6,7 @@ use App\Models\Attendance;
 use App\Services\ZKTecoService;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Exception;
 
 class AttendanceList extends Component
 {
@@ -45,15 +46,60 @@ class AttendanceList extends Component
         $this->resetPage();
     }
 
+    public function checkDeviceConnection()
+    {
+        try {
+            $service = new ZKTecoService();
+            
+            // First check basic connectivity
+            if (!$service->isDeviceReachable()) {
+                session()->flash('error', 'Device is not reachable. Please check IP and network connection.');
+                return false;
+            }
+            
+            // Then check protocol communication
+            if (!$service->testProtocol()) {
+                session()->flash('error', 'Device protocol communication failed. Please check device settings.');
+                return false;
+            }
+            
+            // Finally check if we can get basic device info
+            $deviceInfo = $service->getDeviceInfo();
+            if (!$deviceInfo) {
+                session()->flash('error', 'Could not get device information. Please check device configuration.');
+                return false;
+            }
+            
+            session()->flash('message', 'Device connection successful! Device Info: ' . json_encode($deviceInfo));
+            return true;
+        } catch (\Exception $e) {
+            session()->flash('error', 'Device connection error: ' . $e->getMessage());
+            return false;
+        }
+    }
+
     public function syncAttendance()
     {
-        $service = new ZKTecoService();
-        $success = $service->syncAttendance();
-
-        if ($success) {
-            session()->flash('message', 'Attendance synced successfully!');
-        } else {
-            session()->flash('error', 'Failed to sync attendance data.');
+        // First check device connection
+        if (!$this->checkDeviceConnection()) {
+            return;
+        }
+        
+        // If connection is successful, proceed with syncing
+        try {
+            $service = new ZKTecoService();
+            
+            // First try to get device time to verify communication
+            $deviceTime = $service->getDeviceTime();
+            if (!$deviceTime) {
+                throw new \Exception('Could not get device time. Please check device communication.');
+            }
+            
+            // Then proceed with attendance sync
+            $service->syncAttendance();
+            session()->flash('message', 'Attendance data synced successfully!');
+        } catch (\Exception $e) {
+            session()->flash('error', 'Error syncing attendance: ' . $e->getMessage());
         }
     }
 
