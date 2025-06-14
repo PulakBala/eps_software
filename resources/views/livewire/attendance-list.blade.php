@@ -10,6 +10,9 @@
                     <button class="btn btn-primary" wire:click="syncAttendance">
                         <i class="bx bx-sync me-1"></i> Sync from Device
                     </button>
+                    <button class="btn btn-warning" wire:click="syncEmployees">
+                        <i class="bx bx-user-plus me-1"></i> Sync Employees
+                    </button>
                     <button class="btn btn-success" wire:click="$set('showForm', true)">
                         <i class="bx bx-plus me-1"></i> Add Attendance
                     </button>

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Attendance;
 use App\Models\User;
+use App\Models\Employee;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
@@ -147,7 +148,10 @@ class ZKTecoService
             }
 
             // Get attendance data using package's method
-            $attendanceData = $this->zk->getAttendanceData();
+            $attendanceData = $this->zk->getAttendances();
+            
+            // Debug: Log the raw attendance data
+            Log::info('Raw attendance data from device:', ['data' => $attendanceData]);
             
             if (empty($attendanceData)) {
                 throw new Exception('No attendance data found on device');
@@ -156,20 +160,34 @@ class ZKTecoService
             // Format the data according to our needs
             $formattedData = [];
             foreach ($attendanceData as $data) {
-                if (!isset($data['user_id']) || !isset($data['timestamp'])) {
+                // Debug: Log each attendance record
+                Log::info('Processing attendance record:', ['record' => $data]);
+                
+                if (!isset($data['user_id']) || !isset($data['record_time'])) {
+                    Log::warning('Skipping invalid attendance record:', ['record' => $data]);
                     continue; // Skip invalid records
                 }
 
+                // Find employee by device_user_id
+                $employee = Employee::where('device_user_id', $data['user_id'])->first();
+                if (!$employee) {
+                    Log::warning('Employee not found for device_user_id: ' . $data['user_id']);
+                    continue;
+                }
+
                 $formattedData[] = [
-                    'user_id' => $data['user_id'],
-                    'timestamp' => $data['timestamp'],
-                    'status' => $data['status'] ?? 'check'
+                    'employee_id' => $employee->id,
+                    'timestamp' => $data['record_time'],
+                    'status' => $data['type'] ?? 'check'
                 ];
             }
 
             if (empty($formattedData)) {
                 throw new Exception('No valid attendance records found');
             }
+
+            // Debug: Log the formatted data
+            Log::info('Formatted attendance data:', ['data' => $formattedData]);
 
             return $formattedData;
         } catch (Exception $e) {
@@ -191,7 +209,7 @@ class ZKTecoService
                 
                 // Find or create attendance record
                 $attendance = Attendance::firstOrNew([
-                    'employee_id' => $data['user_id'],
+                    'employee_id' => $data['employee_id'],
                     'date' => $date
                 ]);
 
@@ -215,6 +233,117 @@ class ZKTecoService
         } catch (Exception $e) {
             Log::error('Error syncing attendance: ' . $e->getMessage());
             throw new Exception('Failed to sync attendance: ' . $e->getMessage());
+        }
+    }
+
+    public function getEmployees()
+    {
+        try {
+            if (!$this->connect()) {
+                throw new Exception('Could not connect to device');
+            }
+
+            // Get all employees from device
+            $employees = $this->zk->getUsers();
+            
+            if (empty($employees)) {
+                throw new Exception('No employees found on device');
+            }
+
+            // Format the data
+            $formattedData = [];
+            foreach ($employees as $employee) {
+                $formattedData[] = [
+                    'user_id' => $employee['userid'] ?? null,
+                    'name' => $employee['name'] ?? null,
+                    'role' => $employee['role'] ?? null,
+                    'password' => $employee['password'] ?? null,
+                    'card_number' => $employee['cardno'] ?? null,
+                    'privilege' => $employee['privilege'] ?? null,
+                    'enabled' => $employee['enabled'] ?? true
+                ];
+            }
+
+            return $formattedData;
+        } catch (Exception $e) {
+            Log::error('Error getting employees: ' . $e->getMessage());
+            throw new Exception('Failed to get employee data: ' . $e->getMessage());
+        } finally {
+            $this->disconnect();
+        }
+    }
+
+    public function getEmployee($userId)
+    {
+        try {
+            if (!$this->connect()) {
+                throw new Exception('Could not connect to device');
+            }
+
+            // Get specific employee from device
+            $employee = $this->zk->getUsers($userId);
+            
+            if (empty($employee)) {
+                throw new Exception('Employee not found on device');
+            }
+
+            return [
+                'user_id' => $employee['userid'] ?? null,
+                'name' => $employee['name'] ?? null,
+                'role' => $employee['role'] ?? null,
+                'password' => $employee['password'] ?? null,
+                'card_number' => $employee['cardno'] ?? null,
+                'privilege' => $employee['privilege'] ?? null,
+                'enabled' => $employee['enabled'] ?? true
+            ];
+        } catch (Exception $e) {
+            Log::error('Error getting employee: ' . $e->getMessage());
+            throw new Exception('Failed to get employee data: ' . $e->getMessage());
+        } finally {
+            $this->disconnect();
+        }
+    }
+
+    public function syncEmployees()
+    {
+        try {
+            if (!$this->connect()) {
+                throw new Exception('Could not connect to device');
+            }
+
+            // Get all employees from device
+            $employees = $this->zk->getUsers();
+            
+            if (empty($employees)) {
+                throw new Exception('No employees found on device');
+            }
+
+            // Debug: Log the raw employee data
+            Log::info('Raw employee data from device:', ['data' => $employees]);
+
+            // Format and sync the data
+            foreach ($employees as $employee) {
+                // Debug: Log each employee record
+                Log::info('Processing employee record:', ['record' => $employee]);
+
+                // Find or create employee by device user_id
+                $emp = Employee::firstOrNew(['device_user_id' => $employee['user_id']]);
+                
+                // Update employee information
+                $emp->name = $employee['name'] ?? 'Unknown';
+                $emp->role = $employee['role'] ?? null;
+                $emp->card_number = $employee['cardno'] ?? null;
+                $emp->is_active = true;
+                
+                $emp->save();
+            }
+
+            return true;
+        } catch (Exception $e) {
+            Log::error('Error syncing employees: ' . $e->getMessage());
+            throw new Exception('Failed to sync employees: ' . $e->getMessage());
+        } finally {
+            $this->disconnect();
         }
     }
 } 

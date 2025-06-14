@@ -48,6 +48,13 @@
       </a>
     </li>
 
+    <li class="menu-item {{ request()->is('employees*') ? 'active' : '' }}">
+      <a class="menu-link" href="{{ route('employees.index') }}" wire:navigate>
+        <i class="menu-icon tf-icons bx bx-user-pin"></i>
+        <div>Employees</div>
+      </a>
+    </li>
+
     <li class="menu-item {{ request()->is('attendance') ? 'active' : '' }}">
       <a class="menu-link" href="{{ route('attendance') }}" wire:navigate>
         <i class="menu-icon tf-icons bx bx-calendar-check"></i>

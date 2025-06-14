@@ -151,6 +151,17 @@ class AttendanceList extends Component
         session()->flash('message', 'Attendance updated successfully!');
     }
 
+    public function syncEmployees()
+    {
+        try {
+            $service = new ZKTecoService();
+            $service->syncEmployees();
+            session()->flash('message', 'Employee data synced successfully!');
+        } catch (\Exception $e) {
+            session()->flash('error', 'Error syncing employees: ' . $e->getMessage());
+        }
+    }
+
     public function render()
     {
         $query = Attendance::query()
