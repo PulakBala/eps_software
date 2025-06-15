@@ -21,13 +21,15 @@ class AttendanceList extends Component
     public $check_out;
     public $status;
     public $notes;
+    public $leave_type;
 
     protected $rules = [
-        'employee_id' => 'required|exists:users,id',
+        'employee_id' => 'required|exists:employees,id',
         'date' => 'required|date',
         'check_in' => 'nullable|date_format:H:i',
         'check_out' => 'nullable|date_format:H:i|after:check_in',
-        'status' => 'required|in:present,absent,late,half_day',
+        'status' => 'required|in:present,absent,late,half_day,leave,holiday',
+        'leave_type' => 'required_if:status,leave',
         'notes' => 'nullable|string'
     ];
 
@@ -103,6 +105,13 @@ class AttendanceList extends Component
         }
     }
 
+    public function handleStatusChange()
+    {
+        if ($this->status !== 'leave') {
+            $this->leave_type = null;
+        }
+    }
+
     public function createAttendance()
     {
         $this->validate();
@@ -113,6 +122,7 @@ class AttendanceList extends Component
             'check_in' => $this->check_in,
             'check_out' => $this->check_out,
             'status' => $this->status,
+            'leave_type' => $this->leave_type,
             'notes' => $this->notes
         ]);
 
@@ -129,6 +139,7 @@ class AttendanceList extends Component
         $this->check_in = $this->editingAttendance->check_in;
         $this->check_out = $this->editingAttendance->check_out;
         $this->status = $this->editingAttendance->status;
+        $this->leave_type = $this->editingAttendance->leave_type;
         $this->notes = $this->editingAttendance->notes;
         $this->showForm = true;
     }
@@ -143,6 +154,7 @@ class AttendanceList extends Component
             'check_in' => $this->check_in,
             'check_out' => $this->check_out,
             'status' => $this->status,
+            'leave_type' => $this->leave_type,
             'notes' => $this->notes
         ]);
 

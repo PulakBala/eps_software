@@ -92,13 +92,48 @@ class SalaryList extends Component
                     ->whereYear('date', $currentYear)
                     ->get();
 
-                // Calculate present, absent, and late days
-                $presentDays = $attendances->where('status', 'present')->count();
-                $absentDays = $attendances->where('status', 'absent')->count();
-                $lateDays = $attendances->where('status', 'late')->count();
+                // Calculate present, absent, late days and leaves
+                $presentDays = $attendances->where('status', Attendance::STATUS_PRESENT)->count();
+                $absentDays = $attendances->where('status', Attendance::STATUS_ABSENT)->count();
+                $lateDays = $attendances->where('status', Attendance::STATUS_LATE)->count();
+                $leaveDays = $attendances->where('status', Attendance::STATUS_LEAVE)->count();
+                $holidayDays = $attendances->where('status', Attendance::STATUS_HOLIDAY)->count();
                 
                 // Calculate total working days in the month
-                $totalDays = $presentDays + $absentDays + $lateDays;
+                $totalDays = $presentDays + $absentDays + $lateDays + $leaveDays + $holidayDays;
+
+                // Calculate basic salary and overtime
+                $basicSalary = $employee->basic_salary;
+                
+                // Calculate per day salary
+                $perDaySalary = $basicSalary / config('office.working_days_per_month');
+                
+                // Calculate salary based on attendance
+                $attendanceSalary = $perDaySalary * ($presentDays + $lateDays);
+                
+                // Calculate leave salary (if applicable)
+                $leaveSalary = 0;
+                if ($leaveDays > 0) {
+                    // Get approved leaves
+                    $approvedLeaves = $attendances->where('status', Attendance::STATUS_LEAVE)
+                        ->whereIn('leave_type', [
+                            Attendance::LEAVE_TYPE_SICK,
+                            Attendance::LEAVE_TYPE_CASUAL,
+                            Attendance::LEAVE_TYPE_ANNUAL,
+                            Attendance::LEAVE_TYPE_MATERNITY,
+                            Attendance::LEAVE_TYPE_PATERNITY
+                        ])
+                        ->count();
+                    
+                    // Calculate leave salary (only for approved leaves)
+                    $leaveSalary = $perDaySalary * $approvedLeaves;
+                }
+                
+                // Calculate holiday salary
+                $holidaySalary = $perDaySalary * $holidayDays;
+                
+                // Update basic salary based on attendance
+                $basicSalary = $attendanceSalary + $leaveSalary + $holidaySalary;
 
                 // Calculate overtime hours
                 $overtimeHours = 0;
@@ -117,12 +152,7 @@ class SalaryList extends Component
                     }
                 }
 
-                // Calculate basic salary and overtime
-                $basicSalary = $employee->basic_salary;
-                $overtimeRate = ($basicSalary / (config('office.duty_hours') * config('office.working_days_per_month'))) * config('office.overtime_rate');
-                $overtimePay = $overtimeHours * $overtimeRate;
-
-                // Get total commissions for the month
+                // Calculate total commissions for the month
                 $totalCommissions = Commission::where('employee_id', $employee->id)
                     ->where('month', $currentMonth)
                     ->where('year', $currentYear)
@@ -136,7 +166,7 @@ class SalaryList extends Component
                     ->sum('amount');
 
                 // Calculate total earnings (basic salary + overtime + commissions)
-                $totalEarnings = $basicSalary + $overtimePay + $totalCommissions;
+                $totalEarnings = $basicSalary + ($overtimeHours * ($basicSalary / (config('office.duty_hours') * config('office.working_days_per_month'))) * config('office.overtime_rate')) + $totalCommissions;
 
                 // Calculate net salary (total earnings - total deductions)
                 $netSalary = $totalEarnings - $totalDeductions;

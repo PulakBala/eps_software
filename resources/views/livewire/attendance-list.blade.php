@@ -62,7 +62,7 @@
                                         <label class="form-label">Employee</label>
                                         <select class="form-select" wire:model="employee_id">
                                             <option value="">Select Employee</option>
-                                            @foreach(\App\Models\User::all() as $employee)
+                                            @foreach(\App\Models\Employee::where('is_active', true)->get() as $employee)
                                                 <option value="{{ $employee->id }}">{{ $employee->name }}</option>
                                             @endforeach
                                         </select>
@@ -89,14 +89,30 @@
 
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">Status</label>
-                                        <select class="form-select" wire:model="status">
+                                        <select class="form-select" wire:model="status" wire:change="handleStatusChange">
                                             <option value="">Select Status</option>
                                             <option value="present">Present</option>
                                             <option value="absent">Absent</option>
                                             <option value="late">Late</option>
                                             <option value="half_day">Half Day</option>
+                                            <option value="leave">Leave</option>
+                                            <option value="holiday">Holiday</option>
                                         </select>
                                         @error('status') <span class="text-danger">{{ $message }}</span> @enderror
+                                    </div>
+
+                                    <div class="col-md-6 mb-3" x-show="$wire.status === 'leave'">
+                                        <label class="form-label">Leave Type</label>
+                                        <select class="form-select" wire:model="leave_type">
+                                            <option value="">Select Leave Type</option>
+                                            <option value="sick">Sick Leave</option>
+                                            <option value="casual">Casual Leave</option>
+                                            <option value="annual">Annual Leave</option>
+                                            <option value="maternity">Maternity Leave</option>
+                                            <option value="paternity">Paternity Leave</option>
+                                            <option value="unpaid">Unpaid Leave</option>
+                                        </select>
+                                        @error('leave_type') <span class="text-danger">{{ $message }}</span> @enderror
                                     </div>
 
                                     <div class="col-md-12 mb-3">
