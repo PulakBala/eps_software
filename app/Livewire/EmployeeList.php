@@ -7,6 +7,7 @@ use App\Services\ZKTecoService;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\Log;
+use Exception;
 
 class EmployeeList extends Component
 {
@@ -20,13 +21,15 @@ class EmployeeList extends Component
     public $role = '';
     public $card_number = '';
     public $is_active = true;
+    public $basic_salary = 0;
 
     protected $rules = [
         'name' => 'required|min:3',
         'email' => 'required|email',
         'role' => 'required',
         'card_number' => 'required|unique:employees,card_number',
-        'is_active' => 'boolean'
+        'is_active' => 'boolean',
+        'basic_salary' => 'required|numeric|min:0'
     ];
 
     public function mount()
@@ -42,13 +45,19 @@ class EmployeeList extends Component
         $this->card_number = '';
         $this->is_active = true;
         $this->editingEmployee = null;
+        $this->basic_salary = 0;
+    }
+
+    public function updatedSearch()
+    {
+        $this->resetPage();
     }
 
     public function checkDeviceConnection()
     {
         try {
-            $zkService = new ZKTecoService();
-            $result = $zkService->testConnection();
+            $zk = new ZKTecoService();
+            $result = $zk->testConnection();
             
             if ($result['success']) {
                 session()->flash('message', 'Device connection successful! ' . $result['message']);
@@ -56,31 +65,36 @@ class EmployeeList extends Component
                 session()->flash('error', 'Device connection failed: ' . $result['message']);
             }
         } catch (\Exception $e) {
-            Log::error('Device connection error: ' . $e->getMessage());
-            session()->flash('error', 'Failed to connect to device: ' . $e->getMessage());
+            session()->flash('error', 'Error checking device connection: ' . $e->getMessage());
         }
     }
 
     public function syncEmployees()
     {
         try {
-            $zkService = new ZKTecoService();
-            $employees = $zkService->getEmployees();
+            $zk = new ZKTecoService();
+            $result = $zk->testConnection();
             
-            if (empty($employees)) {
-                session()->flash('error', 'No employees found in the device');
+            if (!$result['success']) {
+                session()->flash('error', 'Cannot sync: ' . $result['message']);
+                return;
+            }
+
+            $users = $zk->getUsers();
+            
+            if (empty($users)) {
+                session()->flash('error', 'No users found in device');
                 return;
             }
 
             $count = 0;
-            foreach ($employees as $employee) {
-                Employee::updateOrCreate(
-                    ['device_user_id' => $employee['user_id']],
+            foreach ($users as $user) {
+                $employee = Employee::updateOrCreate(
+                    ['card_number' => $user['userid']],
                     [
-                        'name' => $employee['name'],
-                        'email' => $employee['email'] ?? '',
-                        'role' => $employee['role'] ?? 'Employee',
-                        'card_number' => $employee['card_number'],
+                        'name' => $user['name'],
+                        'email' => $user['userid'] . '@example.com', // Default email
+                        'role' => 'Employee', // Default role
                         'is_active' => true
                     ]
                 );
@@ -89,8 +103,7 @@ class EmployeeList extends Component
 
             session()->flash('message', "Successfully synced {$count} employees from device");
         } catch (\Exception $e) {
-            Log::error('Employee sync error: ' . $e->getMessage());
-            session()->flash('error', 'Failed to sync employees: ' . $e->getMessage());
+            session()->flash('error', 'Error syncing employees: ' . $e->getMessage());
         }
     }
 
@@ -104,7 +117,8 @@ class EmployeeList extends Component
                 'email' => $this->email,
                 'role' => $this->role,
                 'card_number' => $this->card_number,
-                'is_active' => $this->is_active
+                'is_active' => $this->is_active,
+                'basic_salary' => $this->basic_salary
             ]);
 
             session()->flash('message', 'Employee created successfully');
@@ -118,13 +132,13 @@ class EmployeeList extends Component
 
     public function editEmployee($id)
     {
-        $employee = Employee::findOrFail($id);
-        $this->editingEmployee = $employee;
-        $this->name = $employee->name;
-        $this->email = $employee->email;
-        $this->role = $employee->role;
-        $this->card_number = $employee->card_number;
-        $this->is_active = $employee->is_active;
+        $this->editingEmployee = Employee::findOrFail($id);
+        $this->name = $this->editingEmployee->name;
+        $this->email = $this->editingEmployee->email;
+        $this->role = $this->editingEmployee->role;
+        $this->card_number = $this->editingEmployee->card_number;
+        $this->is_active = $this->editingEmployee->is_active;
+        $this->basic_salary = $this->editingEmployee->basic_salary;
         $this->showForm = true;
     }
 
@@ -144,7 +158,8 @@ class EmployeeList extends Component
                 'email' => $this->email,
                 'role' => $this->role,
                 'card_number' => $this->card_number,
-                'is_active' => $this->is_active
+                'is_active' => $this->is_active,
+                'basic_salary' => $this->basic_salary
             ]);
 
             session()->flash('message', 'Employee updated successfully');
@@ -153,6 +168,22 @@ class EmployeeList extends Component
         } catch (\Exception $e) {
             Log::error('Employee update error: ' . $e->getMessage());
             session()->flash('error', 'Failed to update employee: ' . $e->getMessage());
+        }
+    }
+
+    public function updateBasicSalary()
+    {
+        $this->validate();
+
+        try {
+            $this->editingEmployee->update([
+                'basic_salary' => $this->basic_salary
+            ]);
+
+            session()->flash('message', 'Basic salary updated successfully');
+            $this->editingEmployee = null;
+        } catch (\Exception $e) {
+            session()->flash('error', 'Error updating basic salary: ' . $e->getMessage());
         }
     }
 
@@ -174,6 +205,7 @@ class EmployeeList extends Component
             ->orWhere('email', 'like', '%' . $this->search . '%')
             ->orWhere('role', 'like', '%' . $this->search . '%')
             ->orWhere('card_number', 'like', '%' . $this->search . '%')
+            ->orderBy('name')
             ->paginate(10);
 
         return view('livewire.employee-list', [

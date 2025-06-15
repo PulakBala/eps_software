@@ -62,6 +62,13 @@
       </a>
     </li>
 
+    <li class="menu-item {{ request()->is('salary') ? 'active' : '' }}">
+      <a class="menu-link" href="{{ route('salary') }}" wire:navigate>
+        <i class="menu-icon tf-icons bx bx-money"></i>
+        <div>Salary</div>
+      </a>
+    </li>
+
     <!-- Settings -->
     <li class="menu-item {{ request()->is('settings/*') ? 'active open' : '' }}">
       <a href="javascript:void(0);" class="menu-link menu-toggle">

@@ -31,20 +31,56 @@ class ZKTecoService
         $this->zk = new ZKTeco($ip, $port);
     }
 
+    public function testConnection()
+    {
+        try {
+            // First check basic connectivity
+            if (!$this->isDeviceReachable()) {
+                return [
+                    'success' => false,
+                    'message' => 'Device is not reachable. Please check IP and network connection.'
+                ];
+            }
+            
+            // Then check protocol communication
+            if (!$this->testProtocol()) {
+                return [
+                    'success' => false,
+                    'message' => 'Device protocol communication failed. Please check device settings.'
+                ];
+            }
+            
+            // Finally check if we can get basic device info
+            $deviceInfo = $this->getDeviceInfo();
+            if (!$deviceInfo) {
+                return [
+                    'success' => false,
+                    'message' => 'Could not get device information. Please check device configuration.'
+                ];
+            }
+            
+            return [
+                'success' => true,
+                'message' => 'Device Info: ' . json_encode($deviceInfo)
+            ];
+        } catch (Exception $e) {
+            Log::error('Device connection error: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Device connection error: ' . $e->getMessage()
+            ];
+        }
+    }
+
     public function isDeviceReachable()
     {
         try {
-            $socket = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
-            if ($socket === false) {
-                throw new Exception('Could not create socket');
+            $socket = @fsockopen($this->ip, $this->port, $errno, $errstr, 5);
+            if ($socket) {
+                fclose($socket);
+                return true;
             }
-
-            socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => 5, 'usec' => 0]);
-            
-            $result = @socket_connect($socket, $this->ip, $this->port);
-            socket_close($socket);
-            
-            return $result !== false;
+            return false;
         } catch (Exception $e) {
             Log::error('Device reachability check failed: ' . $e->getMessage());
             return false;
@@ -54,40 +90,31 @@ class ZKTecoService
     public function testProtocol()
     {
         try {
-            if (!$this->isDeviceReachable()) {
-                return false;
-            }
-
-            $this->connect();
-            $version = $this->zk->version();
-            return !empty($version);
+            return $this->zk->connect();
         } catch (Exception $e) {
             Log::error('Protocol test failed: ' . $e->getMessage());
             return false;
-        } finally {
-            $this->disconnect();
         }
     }
 
     public function getDeviceInfo()
     {
         try {
-            if (!$this->isDeviceReachable()) {
+            if (!$this->zk->connect()) {
                 return null;
             }
 
-            $this->connect();
-            return [
+            $info = [
                 'version' => $this->zk->version(),
                 'platform' => $this->zk->platform(),
-                'firmware' => $this->zk->fmVersion(),
-                'serial' => $this->zk->serialNumber()
+                'serialNumber' => $this->zk->serialNumber()
             ];
+
+            $this->zk->disconnect();
+            return $info;
         } catch (Exception $e) {
             Log::error('Failed to get device info: ' . $e->getMessage());
             return null;
-        } finally {
-            $this->disconnect();
         }
     }
 
@@ -344,6 +371,63 @@ class ZKTecoService
             throw new Exception('Failed to sync employees: ' . $e->getMessage());
         } finally {
             $this->disconnect();
+        }
+    }
+
+    public function getUsers()
+    {
+        try {
+            if (!$this->zk->connect()) {
+                throw new Exception('Failed to connect to device');
+            }
+
+            $users = $this->zk->getUser();
+            $this->zk->disconnect();
+
+            if (!is_array($users)) {
+                return [];
+            }
+
+            return array_map(function($user) {
+                return [
+                    'userid' => $user['userid'],
+                    'name' => $user['name'],
+                    'role' => $user['role'] ?? 'Employee',
+                    'password' => $user['password'] ?? '',
+                    'card_number' => $user['userid']
+                ];
+            }, $users);
+        } catch (Exception $e) {
+            Log::error('Failed to get users: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public function getAttendanceData()
+    {
+        try {
+            if (!$this->zk->connect()) {
+                throw new Exception('Failed to connect to device');
+            }
+
+            $attendance = $this->zk->getAttendance();
+            $this->zk->disconnect();
+
+            if (!is_array($attendance)) {
+                return [];
+            }
+
+            return array_map(function($record) {
+                return [
+                    'user_id' => $record['userid'],
+                    'timestamp' => $record['timestamp'],
+                    'status' => $record['status'] ?? 0,
+                    'type' => $record['type'] ?? 0
+                ];
+            }, $attendance);
+        } catch (Exception $e) {
+            Log::error('Failed to get attendance data: ' . $e->getMessage());
+            throw $e;
         }
     }
 } 
