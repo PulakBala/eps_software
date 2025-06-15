@@ -12,6 +12,9 @@ use App\Models\Loan;
 use App\Models\Deduction;
 use Illuminate\Support\Facades\DB;
 use App\Models\SalaryDeduction;
+use App\Models\Employee;
+use App\Models\Attendance;
+use Carbon\Carbon;
 
 class SalaryList extends Component
 {
@@ -72,64 +75,101 @@ class SalaryList extends Component
     public function generateSalary()
     {
         try {
-            // Get all active employees
-            $employees = \App\Models\Employee::where('is_active', true)->get();
-            
-            foreach ($employees as $employee) {
-                // Skip if basic salary is not set
-                if (!$employee->basic_salary) {
-                    session()->flash('error', "Basic salary not set for employee: {$employee->name}");
-                    continue;
-                }
+            $employees = Employee::where('is_active', true)->get();
+            $currentMonth = now()->month;
+            $currentYear = now()->year;
 
-                // Calculate attendance
-                $attendance = \App\Models\Attendance::where('employee_id', $employee->id)
-                    ->whereMonth('date', $this->month)
-                    ->whereYear('date', $this->year)
+            foreach ($employees as $employee) {
+                // Get existing salary record if any
+                $existingSalary = Salary::where('employee_id', $employee->id)
+                    ->where('month', $currentMonth)
+                    ->where('year', $currentYear)
+                    ->first();
+
+                // Get attendance records for the month
+                $attendances = Attendance::where('employee_id', $employee->id)
+                    ->whereMonth('date', $currentMonth)
+                    ->whereYear('date', $currentYear)
                     ->get();
 
-                $presentDays = $attendance->where('status', 'present')->count();
-                $absentDays = $attendance->where('status', 'absent')->count();
-                $lateDays = $attendance->where('status', 'late')->count();
-                $overtimeHours = $attendance->sum('overtime_hours');
-
-                // Calculate total days in month
-                $totalDays = \Carbon\Carbon::create($this->year, $this->month, 1)->daysInMonth;
-
-                // Calculate salary
-                $basicSalary = $employee->basic_salary;
-                $perDaySalary = $basicSalary / 30; // Assuming 30 days month
-                $overtimeRate = ($perDaySalary / 8) * 1.5; // 1.5x for overtime
+                // Calculate present, absent, and late days
+                $presentDays = $attendances->where('status', 'present')->count();
+                $absentDays = $attendances->where('status', 'absent')->count();
+                $lateDays = $attendances->where('status', 'late')->count();
                 
-                $totalEarnings = $basicSalary + ($overtimeHours * $overtimeRate);
-                $totalDeductions = ($absentDays * $perDaySalary) + ($lateDays * ($perDaySalary * 0.25));
+                // Calculate total working days in the month
+                $totalDays = $presentDays + $absentDays + $lateDays;
+
+                // Calculate overtime hours
+                $overtimeHours = 0;
+                foreach ($attendances as $attendance) {
+                    if ($attendance->check_in && $attendance->check_out) {
+                        $checkIn = Carbon::parse($attendance->check_in);
+                        $checkOut = Carbon::parse($attendance->check_out);
+                        
+                        // Calculate total working hours
+                        $workingHours = $checkOut->diffInHours($checkIn);
+                        
+                        // If working hours is more than duty hours, count as overtime
+                        if ($workingHours > config('office.duty_hours')) {
+                            $overtimeHours += ($workingHours - config('office.duty_hours'));
+                        }
+                    }
+                }
+
+                // Calculate basic salary and overtime
+                $basicSalary = $employee->basic_salary;
+                $overtimeRate = ($basicSalary / (config('office.duty_hours') * config('office.working_days_per_month'))) * config('office.overtime_rate');
+                $overtimePay = $overtimeHours * $overtimeRate;
+
+                // Get total commissions for the month
+                $totalCommissions = Commission::where('employee_id', $employee->id)
+                    ->where('month', $currentMonth)
+                    ->where('year', $currentYear)
+                    ->whereIn('status', ['approved', 'pending'])
+                    ->sum('amount');
+
+                // Get total deductions for the month
+                $totalDeductions = SalaryDeduction::where('employee_id', $employee->id)
+                    ->whereMonth('date', $currentMonth)
+                    ->whereYear('date', $currentYear)
+                    ->sum('amount');
+
+                // Calculate total earnings (basic salary + overtime + commissions)
+                $totalEarnings = $basicSalary + $overtimePay + $totalCommissions;
+
+                // Calculate net salary (total earnings - total deductions)
                 $netSalary = $totalEarnings - $totalDeductions;
 
                 // Create or update salary record
-                \App\Models\Salary::updateOrCreate(
+                Salary::updateOrCreate(
                     [
                         'employee_id' => $employee->id,
-                        'month' => $this->month,
-                        'year' => $this->year
+                        'month' => $currentMonth,
+                        'year' => $currentYear
                     ],
                     [
                         'basic_salary' => $basicSalary,
                         'present_days' => $presentDays,
                         'absent_days' => $absentDays,
                         'late_days' => $lateDays,
-                        'overtime_hours' => $overtimeHours,
                         'total_days' => $totalDays,
+                        'overtime_hours' => $overtimeHours,
+                        'commission_amount' => $totalCommissions,
                         'total_earnings' => $totalEarnings,
                         'total_deductions' => $totalDeductions,
                         'net_salary' => $netSalary,
-                        'status' => 'pending'
+                        // Preserve existing status if it was paid
+                        'status' => $existingSalary && $existingSalary->status === 'paid' ? 'paid' : 'pending',
+                        // Preserve payment date if it was paid
+                        'payment_date' => $existingSalary ? $existingSalary->payment_date : null
                     ]
                 );
             }
 
-            session()->flash('message', 'Salaries generated successfully.');
+            session()->flash('message', 'Salary generated successfully!');
         } catch (\Exception $e) {
-            session()->flash('error', 'Error generating salaries: ' . $e->getMessage());
+            session()->flash('error', 'Error generating salary: ' . $e->getMessage());
         }
     }
 

@@ -140,17 +140,18 @@ class SalaryService
             ->get();
         
         $totalOvertime = 0;
+        $dutyHours = config('office.duty_hours');
         
         foreach ($attendance as $record) {
             $checkIn = Carbon::parse($record->check_in);
             $checkOut = Carbon::parse($record->check_out);
             
-            // Assuming 8 hours is regular work time
-            $regularHours = 8;
+            // Calculate total working hours
             $workedHours = $checkOut->diffInHours($checkIn);
             
-            if ($workedHours > $regularHours) {
-                $totalOvertime += ($workedHours - $regularHours);
+            // If working hours is more than duty hours, count as overtime
+            if ($workedHours > $dutyHours) {
+                $totalOvertime += ($workedHours - $dutyHours);
             }
         }
         
@@ -168,8 +169,8 @@ class SalaryService
         // Calculate present days salary
         $presentDaysSalary = $dailyRate * $presentDays;
         
-        // Calculate overtime salary (assuming 1.5x rate)
-        $overtimeRate = ($dailyRate / 8) * 1.5;
+        // Calculate overtime salary using configured rate
+        $overtimeRate = ($dailyRate / config('office.duty_hours')) * config('office.overtime_rate');
         $overtimeSalary = $overtimeRate * $overtimeHours;
         
         return $presentDaysSalary + $overtimeSalary;

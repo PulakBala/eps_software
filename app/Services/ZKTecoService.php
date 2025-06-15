@@ -247,10 +247,27 @@ class ZKTecoService
                     $attendance->check_out = $time;
                 }
 
-                // Set status based on check-in time
+                // Set status based on check-in time and office configuration
                 if ($attendance->check_in) {
                     $checkInTime = Carbon::parse($attendance->check_in);
-                    $attendance->status = $checkInTime->hour > 9 ? 'late' : 'present';
+                    $officeStartTime = Carbon::parse(config('office.start_time'));
+                    $lateGracePeriod = config('office.late_grace_period');
+                    
+                    // Log the times for debugging
+                    Log::info('Attendance check times:', [
+                        'check_in' => $checkInTime->format('h:i A'), // Format as 12-hour with AM/PM
+                        'office_start' => $officeStartTime->format('h:i A'),
+                        'grace_period' => $lateGracePeriod . ' minutes'
+                    ]);
+                    
+                    // Check if check-in is after office start time + grace period
+                    if ($checkInTime->gt($officeStartTime->copy()->addMinutes($lateGracePeriod))) {
+                        $attendance->status = 'late';
+                        Log::info('Marked as late. Check-in time: ' . $checkInTime->format('h:i A'));
+                    } else {
+                        $attendance->status = 'present';
+                        Log::info('Marked as present. Check-in time: ' . $checkInTime->format('h:i A'));
+                    }
                 }
 
                 $attendance->save();
