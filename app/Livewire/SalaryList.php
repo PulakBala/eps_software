@@ -15,6 +15,7 @@ use App\Models\SalaryDeduction;
 use App\Models\Employee;
 use App\Models\Attendance;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class SalaryList extends Component
 {
@@ -102,13 +103,13 @@ class SalaryList extends Component
                 // Calculate total working days in the month
                 $totalDays = $presentDays + $absentDays + $lateDays + $leaveDays + $holidayDays;
 
-                // Calculate basic salary and overtime
+                // Get employee's basic salary
                 $basicSalary = $employee->basic_salary;
                 
                 // Calculate per day salary
                 $perDaySalary = $basicSalary / config('office.working_days_per_month');
                 
-                // Calculate salary based on attendance
+                // Calculate attendance based salary
                 $attendanceSalary = $perDaySalary * ($presentDays + $lateDays);
                 
                 // Calculate leave salary (if applicable)
@@ -132,11 +133,9 @@ class SalaryList extends Component
                 // Calculate holiday salary
                 $holidaySalary = $perDaySalary * $holidayDays;
                 
-                // Update basic salary based on attendance
-                $basicSalary = $attendanceSalary + $leaveSalary + $holidaySalary;
-
-                // Calculate overtime hours
+                // Calculate overtime hours and salary
                 $overtimeHours = 0;
+                $overtimeSalary = 0;
                 foreach ($attendances as $attendance) {
                     if ($attendance->check_in && $attendance->check_out) {
                         $checkIn = Carbon::parse($attendance->check_in);
@@ -151,6 +150,10 @@ class SalaryList extends Component
                         }
                     }
                 }
+                
+                // Calculate overtime salary
+                $overtimeRate = ($perDaySalary / config('office.duty_hours')) * config('office.overtime_rate');
+                $overtimeSalary = $overtimeRate * $overtimeHours;
 
                 // Calculate total commissions for the month
                 $totalCommissions = Commission::where('employee_id', $employee->id)
@@ -166,7 +169,7 @@ class SalaryList extends Component
                     ->sum('amount');
 
                 // Calculate total earnings (basic salary + overtime + commissions)
-                $totalEarnings = $basicSalary + ($overtimeHours * ($basicSalary / (config('office.duty_hours') * config('office.working_days_per_month'))) * config('office.overtime_rate')) + $totalCommissions;
+                $totalEarnings = $basicSalary + $overtimeSalary + $totalCommissions;
 
                 // Calculate net salary (total earnings - total deductions)
                 $netSalary = $totalEarnings - $totalDeductions;
@@ -179,7 +182,7 @@ class SalaryList extends Component
                         'year' => $currentYear
                     ],
                     [
-                        'basic_salary' => $basicSalary,
+                        'basic_salary' => $basicSalary, // Store the full basic salary
                         'present_days' => $presentDays,
                         'absent_days' => $absentDays,
                         'late_days' => $lateDays,
@@ -345,6 +348,47 @@ class SalaryList extends Component
             'commissions' => $commissions,
             'total_commissions' => $commissions->sum('amount')
         ];
+    }
+
+    public function viewPayslip($salaryId)
+    {
+        try {
+            $this->redirect(route('payslip.view', ['id' => $salaryId]));
+        } catch (\Exception $e) {
+            session()->flash('error', 'Error viewing payslip: ' . $e->getMessage());
+        }
+    }
+
+    public function generatePayslip($salaryId)
+    {
+        try {
+            $salary = Salary::with(['employee', 'deductions', 'commissions'])->findOrFail($salaryId);
+            
+            // Calculate total deductions
+            $totalDeductions = $salary->deductions->sum('amount');
+            
+            // Calculate total commissions
+            $totalCommissions = $salary->commissions->sum('amount');
+            
+            // Generate PDF
+            $pdf = PDF::loadView('pdf.payslip', [
+                'salary' => $salary,
+                'totalDeductions' => $totalDeductions,
+                'totalCommissions' => $totalCommissions,
+                'month' => date('F Y', mktime(0, 0, 0, $salary->month, 1, $salary->year))
+            ]);
+            
+            // Generate filename
+            $filename = "payslip_{$salary->employee->name}_{$salary->month}_{$salary->year}.pdf";
+            
+            // Return PDF for download
+            return response()->streamDownload(function () use ($pdf) {
+                echo $pdf->output();
+            }, $filename);
+            
+        } catch (\Exception $e) {
+            session()->flash('error', 'Error generating payslip: ' . $e->getMessage());
+        }
     }
 
     public function render()

@@ -2,12 +2,13 @@
 
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
+use App\Http\Controllers\DashboardController;
 
 Route::get('/', function () {
   return view('welcome');
 })->name('home');
 
-Route::view('dashboard', 'dashboard')
+Route::get('dashboard', [DashboardController::class, 'index'])
   ->middleware(['auth', 'verified'])
   ->name('dashboard');
 
@@ -23,6 +24,7 @@ Route::middleware(['auth'])->group(function () {
   Route::get('/inventory', App\Livewire\InventoryList::class)->name('inventory');
   Route::get('/attendance', App\Livewire\AttendanceList::class)->name('attendance');
   Route::get('/salary', App\Livewire\SalaryList::class)->name('salary');
+  Route::get('/payslip/{id}', App\Livewire\PayslipView::class)->name('payslip.view');
   Route::get('/employees', App\Livewire\EmployeeList::class)->name('employees.index');
 });
 

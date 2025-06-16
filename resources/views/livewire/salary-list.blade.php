@@ -111,6 +111,11 @@
                                                     </li>
                                                 @endif
                                                 <li>
+                                                    <button class="dropdown-item" wire:click="viewPayslip({{ $salary->id }})">
+                                                        <i class="bx bx-file-pdf me-2"></i> Generate Payslip
+                                                    </button>
+                                                </li>
+                                                <li>
                                                     <button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#addCommissionModal" wire:click="$set('employee_id', {{ $salary->employee_id }})">
                                                         <i class="bx bx-plus me-2"></i> Add Commission
                                                     </button>

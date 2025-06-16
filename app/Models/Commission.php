@@ -11,11 +11,11 @@ class Commission extends Model
 
     protected $fillable = [
         'employee_id',
-        'amount',
-        'type',
-        'reference_id',
+        'salary_id',
         'month',
         'year',
+        'amount',
+        'type',
         'status'
     ];
 
@@ -30,6 +30,6 @@ class Commission extends Model
 
     public function salary()
     {
-        return $this->belongsTo(Salary::class, ['employee_id', 'month', 'year'], ['employee_id', 'month', 'year']);
+        return $this->belongsTo(Salary::class);
     }
 } 
