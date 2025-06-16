@@ -5,14 +5,18 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Sale extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'sale_number',
         'customer_id',
         'sale_date',
         'delivery_date',
+        'product_id',
         'product_name',
         'quantity',
         'price',
@@ -24,8 +28,8 @@ class Sale extends Model
     ];
 
     protected $casts = [
-        'sale_date' => 'date',
-        'delivery_date' => 'date',
+        'sale_date' => 'datetime',
+        'delivery_date' => 'datetime',
         'quantity' => 'integer',
         'price' => 'decimal:2',
         'total_amount' => 'decimal:2',
@@ -37,6 +41,11 @@ class Sale extends Model
         return $this->belongsTo(Invoice::class, 'customer_id');
     }
 
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+
     public function getDueAmountAttribute()
     {
         return $this->total_amount - $this->paid_amount;
@@ -44,7 +53,10 @@ class Sale extends Model
 
     public function isDeliveryOverdue(): bool
     {
-        return $this->delivery_date && $this->delivery_date->isPast() && $this->delivery_status !== 'delivered';
+        if (!$this->delivery_date) {
+            return false;
+        }
+        return $this->delivery_date->isPast() && $this->delivery_status !== 'delivered';
     }
 
     public function getDaysUntilDelivery(): ?int
@@ -52,17 +64,17 @@ class Sale extends Model
         if (!$this->delivery_date) {
             return null;
         }
-        return Carbon::now()->diffInDays($this->delivery_date, false);
+        return now()->diffInDays($this->delivery_date, false);
     }
 
     public function getDeliveryStatusBadgeClass(): string
     {
         return match($this->delivery_status) {
-            'not_started' => 'bg-secondary',
-            'in_progress' => 'bg-info',
-            'completed' => 'bg-warning',
-            'delivered' => 'bg-success',
-            default => 'bg-secondary'
+            'not_started' => 'secondary',
+            'in_progress' => 'warning',
+            'completed' => 'info',
+            'delivered' => 'success',
+            default => 'secondary'
         };
     }
 

@@ -60,20 +60,32 @@
                                 </div>
 
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label">Product Name</label>
-                                    <input type="text" class="form-control" wire:model="product_name">
-                                    @error('product_name') <span class="text-danger">{{ $message }}</span> @enderror
+                                    <label class="form-label">Product</label>
+                                    <select class="form-select" wire:model="product_id" wire:change="updateProductDetails">
+                                        <option value="">Select Product</option>
+                                        @foreach(\App\Models\Product::where('quantity', '>', 0)->get() as $product)
+                                            <option value="{{ $product->id }}" 
+                                                    data-price="{{ $product->selling_price }}"
+                                                    data-stock="{{ $product->quantity }}">
+                                                {{ $product->name }} (Stock: {{ $product->quantity }} {{ $product->unit }})
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @error('product_id') <span class="text-danger">{{ $message }}</span> @enderror
                                 </div>
 
                                 <div class="col-md-3 mb-3">
                                     <label class="form-label">Quantity</label>
-                                    <input type="number" class="form-control" wire:model="quantity">
+                                    <input type="number" class="form-control" wire:model="quantity" wire:change="calculateTotal">
                                     @error('quantity') <span class="text-danger">{{ $message }}</span> @enderror
+                                    @if($availableStock !== null)
+                                        <small class="text-muted">Available Stock: {{ $availableStock }}</small>
+                                    @endif
                                 </div>
 
                                 <div class="col-md-3 mb-3">
                                     <label class="form-label">Price</label>
-                                    <input type="number" step="0.01" class="form-control" wire:model="price">
+                                    <input type="number" step="0.01" class="form-control" wire:model="price" readonly>
                                     @error('price') <span class="text-danger">{{ $message }}</span> @enderror
                                 </div>
 

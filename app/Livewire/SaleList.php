@@ -25,14 +25,18 @@ class SaleList extends Component
     public $delivery_status = 'not_started';
     public $notes;
     public $filter = 'all'; // all, overdue, upcoming, weekly, monthly
+    public $product_id;
+    public $availableStock;
 
     protected $rules = [
-        'customer_id' => 'required|exists:invoices,id',
+        'customer_id' => 'required',
         'sale_date' => 'required|date',
-        'delivery_date' => 'required|date|after_or_equal:sale_date',
-        'product_name' => 'required|string|min:3',
-        'quantity' => 'required|integer|min:1',
+        'delivery_date' => 'nullable|date|after_or_equal:sale_date',
+        'product_id' => 'required|exists:products,id',
+        'product_name' => 'required|string',
+        'quantity' => 'required|numeric|min:1',
         'price' => 'required|numeric|min:0',
+        'total_amount' => 'required|numeric|min:0',
         'payment_status' => 'required|in:paid,due,partial',
         'paid_amount' => 'required|numeric|min:0',
         'delivery_status' => 'required|in:not_started,in_progress,completed,delivered',
@@ -59,6 +63,21 @@ class SaleList extends Component
         $this->calculateTotal();
     }
 
+    public function updateProductDetails()
+    {
+        if ($this->product_id) {
+            $product = \App\Models\Product::find($this->product_id);
+            if ($product) {
+                $this->product_name = $product->name;
+                $this->price = $product->selling_price;
+                $this->availableStock = $product->quantity;
+                $this->calculateTotal();
+            }
+        } else {
+            $this->reset(['product_name', 'price', 'availableStock', 'quantity', 'total_amount']);
+        }
+    }
+
     public function calculateTotal()
     {
         if ($this->quantity && $this->price) {
@@ -77,11 +96,24 @@ class SaleList extends Component
     {
         $this->validate();
 
-        Sale::create([
-            'sale_number' => $this->generateSaleNumber(),
+        // Check if enough stock is available
+        $product = \App\Models\Product::find($this->product_id);
+        if ($product->quantity < $this->quantity) {
+            session()->flash('error', 'Not enough stock available. Available stock: ' . $product->quantity);
+            return;
+        }
+
+        // Generate sale number
+        $lastSale = Sale::latest()->first();
+        $saleNumber = $lastSale ? 'SALE-' . str_pad($lastSale->id + 1, 6, '0', STR_PAD_LEFT) : 'SALE-000001';
+
+        // Create the sale
+        $sale = Sale::create([
+            'sale_number' => $saleNumber,
             'customer_id' => $this->customer_id,
             'sale_date' => $this->sale_date,
             'delivery_date' => $this->delivery_date,
+            'product_id' => $this->product_id,
             'product_name' => $this->product_name,
             'quantity' => $this->quantity,
             'price' => $this->price,
@@ -91,6 +123,9 @@ class SaleList extends Component
             'delivery_status' => $this->delivery_status,
             'notes' => $this->notes
         ]);
+
+        // Update product stock
+        $product->decrement('quantity', $this->quantity);
 
         $this->reset();
         $this->showForm = false;
@@ -99,18 +134,20 @@ class SaleList extends Component
 
     public function editSale($id)
     {
-        $this->editingSale = Sale::findOrFail($id);
-        $this->customer_id = $this->editingSale->customer_id;
-        $this->sale_date = $this->editingSale->sale_date->format('Y-m-d');
-        $this->delivery_date = $this->editingSale->delivery_date->format('Y-m-d');
-        $this->product_name = $this->editingSale->product_name;
-        $this->quantity = $this->editingSale->quantity;
-        $this->price = $this->editingSale->price;
-        $this->total_amount = $this->editingSale->total_amount;
-        $this->payment_status = $this->editingSale->payment_status;
-        $this->paid_amount = $this->editingSale->paid_amount;
-        $this->delivery_status = $this->editingSale->delivery_status;
-        $this->notes = $this->editingSale->notes;
+        $sale = Sale::findOrFail($id);
+        $this->editingSale = $sale;
+        $this->customer_id = $sale->customer_id;
+        $this->sale_date = $sale->sale_date;
+        $this->delivery_date = $sale->delivery_date;
+        $this->product_id = $sale->product_id;
+        $this->product_name = $sale->product_name;
+        $this->quantity = $sale->quantity;
+        $this->price = $sale->price;
+        $this->total_amount = $sale->total_amount;
+        $this->payment_status = $sale->payment_status;
+        $this->paid_amount = $sale->paid_amount;
+        $this->delivery_status = $sale->delivery_status;
+        $this->notes = $sale->notes;
         $this->showForm = true;
     }
 
@@ -118,10 +155,22 @@ class SaleList extends Component
     {
         $this->validate();
 
+        // Check if enough stock is available (considering the old quantity)
+        $product = \App\Models\Product::find($this->product_id);
+        $oldQuantity = $this->editingSale->quantity;
+        $newQuantity = $this->quantity;
+        
+        if ($product->quantity + $oldQuantity < $newQuantity) {
+            session()->flash('error', 'Not enough stock available. Available stock: ' . ($product->quantity + $oldQuantity));
+            return;
+        }
+
+        // Update the sale
         $this->editingSale->update([
             'customer_id' => $this->customer_id,
             'sale_date' => $this->sale_date,
             'delivery_date' => $this->delivery_date,
+            'product_id' => $this->product_id,
             'product_name' => $this->product_name,
             'quantity' => $this->quantity,
             'price' => $this->price,
@@ -131,6 +180,10 @@ class SaleList extends Component
             'delivery_status' => $this->delivery_status,
             'notes' => $this->notes
         ]);
+
+        // Update product stock
+        $product->increment('quantity', $oldQuantity); // Add back the old quantity
+        $product->decrement('quantity', $newQuantity); // Subtract the new quantity
 
         $this->reset();
         $this->showForm = false;
